@@ -1,6 +1,6 @@
 {
-    "name": "@100monkeys/smcp",
-    "version": "0.1.0",
+    "name": "@100monkeys-ai/smcp",
+    "version": "0.11.0-pre-alpha",
     "type": "module",
     "description": "TypeScript client wrapper for the Secure Model Context Protocol (SMCP)",
     "main": "dist/index.js",
@@ -24,6 +24,9 @@
     ],
     "author": "100monkeys.ai",
     "license": "MIT",
+    "publishConfig": {
+        "registry": "https://npm.pkg.github.com"
+    },
     "dependencies": {
         "@noble/ed25519": "^2.1.0"
     },
