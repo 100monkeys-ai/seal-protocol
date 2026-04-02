@@ -61,7 +61,7 @@ Copyright (C) 2026. This document may be reproduced and distributed in accordanc
    4.2. [Security Token (JWT)](#42-security-token-jwt)  
    4.3. [Signature Format](#43-signature-format)  
 5. [Authorization Model](#5-authorization-model)  
-   5.1. [Security Scope](#51-security-scope)  
+   5.1. [SecurityContext](#51-securitycontext)  
    5.2. [Capability Definition](#52-capability-definition)  
    5.3. [Policy Evaluation Semantics](#53-policy-evaluation-semantics)  
 6. [Attestation Protocol](#6-attestation-protocol)  
@@ -102,11 +102,11 @@ Copyright (C) 2026. This document may be reproduced and distributed in accordanc
     13.1. [Protocol Identifier Registry](#131-protocol-identifier-registry)  
     13.2. [Error Code Registry](#132-error-code-registry)  
     13.3. [JWT Claim Names Registry](#133-jwt-claim-names-registry)  
-    13.4. [Security Scope Registry](#134-security-scope-registry)  
+    13.4. [SecurityContext Registry](#134-securitycontext-registry)  
 14. [References](#14-references)  
     14.1. [Normative References](#141-normative-references)  
     14.2. [Informative References](#142-informative-references)  
-Appendix A: [Security Scope Examples](#appendix-a-security-scope-examples)  
+Appendix A: [SecurityContext Examples](#appendix-a-securitycontext-examples)  
 Appendix B: [Implementation Guidelines](#appendix-b-implementation-guidelines)  
 Appendix C: [Test Vectors](#appendix-c-test-vectors)  
 Appendix D: [Compliance Mapping](#appendix-d-compliance-mapping)  
@@ -158,9 +158,9 @@ This specification uses the following terms:
 - **Gateway**: The trusted intermediary that enforces SEAL policies (trusted)
 - **Tool Server**: The backend service providing MCP tools (may be trusted or untrusted)
 - **Security Envelope**: The outer wrapper containing signature, token, and inner MCP payload
-- **Security Token**: A JWT proving client identity and assigned Security Scope
-- **Security Scope**: A named permission boundary defining allowed operations (e.g., "read-only-research")
-- **Capability**: A fine-grained permission within a Security Scope (e.g., "fs.read" with path constraints)
+- **Security Token**: A JWT proving client identity and assigned SecurityContext
+- **SecurityContext**: A named permission boundary defining allowed operations (e.g., "read-only-research")
+- **Capability**: A fine-grained permission within a SecurityContext (e.g., "fs.read" with path constraints)
 - **Attestation**: The handshake process where a client proves identity and receives a Security Token
 - **Workload Identity**: A verifiable identifier for the execution environment (container ID, process ID, etc.)
 - **Policy Decision Point (PDP)**: The component that evaluates authorization policies
@@ -187,7 +187,7 @@ This section describes the security threats that SEAL is designed to mitigate.
 6. Tool server executes the command (SECURITY BREACH)
 ```
 
-**SEAL Mitigation**: The agent's Security Scope does not include "fs.delete" capability, so the Gateway rejects the request before it reaches the tool server.
+**SEAL Mitigation**: The agent's SecurityContext does not include "fs.delete" capability, so the Gateway rejects the request before it reaches the tool server.
 
 ### 2.2. Prompt Injection
 
@@ -195,7 +195,7 @@ This section describes the security threats that SEAL is designed to mitigate.
 
 **Attack Vector**: Untrusted content (web pages, documents, API responses) can contain instructions that override the agent's original task.
 
-**SEAL Mitigation**: Even if prompt injection succeeds in changing agent behavior, the agent cannot escape its cryptographically signed Security Scope. A "read-only-research" agent cannot suddenly perform write operations.
+**SEAL Mitigation**: Even if prompt injection succeeds in changing agent behavior, the agent cannot escape its cryptographically signed SecurityContext. A "read-only-research" agent cannot suddenly perform write operations.
 
 ### 2.3. Tool Server Impersonation
 
@@ -325,7 +325,7 @@ All SEAL messages MUST use the following JSON structure:
 **`security_token`** (string, REQUIRED)
 
 - A JSON Web Token (JWT) issued by the Gateway during attestation
-- Contains claims identifying the client and its assigned Security Scope
+- Contains claims identifying the client and its assigned SecurityContext
 - MUST be signed by the Gateway's KMS key
 - Format defined in [Section 4.2](#42-security-token-jwt)
 
@@ -352,7 +352,7 @@ All SEAL messages MUST use the following JSON structure:
 ```json
 {
   "protocol": "seal/v1",
-  "security_token": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZ2VudC04YTlmN2IiLCJzY3AiOiJyZWFkLW9ubHktcmVzZWFyY2giLCJ3aWQiOiJkb2NrZXI6Ly84YTlmN2IzYyIsImlhdCI6MTcwODI2MTkyMSwiZXhwIjoxNzA4MjY1NTIxfQ.signature_here",
+  "security_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZ2VudC04YTlmN2IiLCJzY3AiOiJyZWFkLW9ubHktcmVzZWFyY2giLCJ3aWQiOiJkb2NrZXI6Ly84YTlmN2IzYyIsImlhdCI6MTcwODI2MTkyMSwiZXhwIjoxNzA4MjY1NTIxfQ.signature_here",
   "signature": "3k9j2lV8d+QpL7mN1wR/xY4zP0aB6sC8tE2uF9gH5iJ3kK7lM4nO0pQ1rS9tU0vW",
   "payload": {
     "jsonrpc": "2.0",
@@ -377,13 +377,16 @@ The Security Token is a JSON Web Token (JWT) as defined in [RFC 7519](https://ww
 
 ```json
 {
-  "alg": "EdDSA",
+  "alg": "RS256",
   "typ": "JWT"
 }
 ```
 
-- `alg` MUST be `"EdDSA"` (Ed25519 signature algorithm)
+- `alg` SHOULD be `"RS256"` (RECOMMENDED) or `"EdDSA"` (acceptable alternative)
+- Both RS256 and EdDSA MUST be supported by conformant implementations
 - `typ` MUST be `"JWT"`
+
+**Note**: RS256 is RECOMMENDED for gateway JWT signing because of broad library and HSM/KMS support. EdDSA (Ed25519) remains acceptable. This applies only to Security Token (caller JWT) signing; envelope signatures always use Ed25519 (see [Section 7.1](#71-signature-algorithm-ed25519)).
 
 #### 4.2.2. JWT Claims
 
@@ -397,7 +400,7 @@ The following claims MUST be present:
 
 **SEAL-Specific Claims**:
 
-- `scp` (Security Scope): Name of the assigned Security Scope (see [Section 5.1](#51-security-scope))
+- `scp` (SecurityContext): Short wire name for the assigned SecurityContext (see [Section 5.1](#51-securitycontext))
 - `wid` (Workload Identity): Verifiable identifier for the execution environment (e.g., container ID)
 
 **Optional Claims**:
@@ -469,11 +472,11 @@ See [Section 7.3](#73-canonical-message-construction) for detailed algorithm.
 
 SEAL implements a capability-based authorization model with deny-by-default semantics.
 
-### 5.1. Security Scope
+### 5.1. SecurityContext
 
-A **Security Scope** is a named permission boundary that defines what operations a client may perform.
+A **SecurityContext** is a named permission boundary that defines what operations a client may perform.
 
-#### 5.1.1. Scope Structure
+#### 5.1.1. SecurityContext Structure
 
 ```json
 {
@@ -482,16 +485,15 @@ A **Security Scope** is a named permission boundary that defines what operations
   "capabilities": [
     {
       "tool_pattern": "string",
-      "constraints": {
-        "path_allowlist": ["string"],
-        "command_allowlist": ["string"],
-        "domain_allowlist": ["string"],
-        "rate_limit": {
-          "calls": integer,
-          "per_seconds": integer
-        },
-        "max_response_size": integer
-      }
+      "path_allowlist": ["string"],
+      "command_allowlist": ["string"],
+      "subcommand_allowlist": ["string"],
+      "domain_allowlist": ["string"],
+      "rate_limit": {
+        "calls": integer,
+        "per_seconds": integer
+      },
+      "max_response_size": integer
     }
   ],
   "deny_list": ["string"]
@@ -502,13 +504,13 @@ A **Security Scope** is a named permission boundary that defines what operations
 
 **`name`** (string, REQUIRED)
 
-- Unique identifier for the scope
+- Unique identifier for the SecurityContext
 - MUST match pattern: `^[a-z][a-z0-9-]*$` (lowercase, hyphens allowed)
 - Example: `"read-only-research"`, `"code-assistant"`
 
 **`description`** (string, REQUIRED)
 
-- Human-readable description of the scope's purpose
+- Human-readable description of the SecurityContext's purpose
 
 **`capabilities`** (array, REQUIRED)
 
@@ -533,43 +535,51 @@ A **Capability** grants permission to use a tool, optionally with constraints.
 - Supports exact match (`"fs.read"`) or wildcard (`"fs.*"`, `"web.*"`)
 - Wildcard `"*"` matches all tools (use with caution)
 
-**`constraints`** (object, OPTIONAL)
+**`path_allowlist`** (array of strings, OPTIONAL)
 
-- Additional restrictions on tool usage
-- Constraint types depend on tool category
+- Allowed filesystem paths (glob patterns supported)
+- Applicable to `fs.*` tools
 
-#### 5.2.2. Constraint Types
+**`command_allowlist`** (array of strings, OPTIONAL)
 
-**File System Constraints** (for `fs.*` tools):
+- Allowed base commands (e.g., `["git", "npm"]`)
+- Applicable to `cmd.run` or similar tools
 
-- `path_allowlist` (array of strings): Allowed filesystem paths (glob patterns supported)
-- `max_response_size` (integer): Maximum file size in bytes
+**`subcommand_allowlist`** (array of strings, OPTIONAL)
 
-**Command Execution Constraints** (for `cmd.run` or similar):
+- Allowed subcommands within a permitted base command (e.g., `["status", "diff", "log"]` for `git`)
+- Applicable to `cmd.run` tools; when present, both the base command and the subcommand must match
 
-- `command_allowlist` (array of strings): Allowed base commands (e.g., `["git", "npm"]`)
+**`domain_allowlist`** (array of strings, OPTIONAL)
 
-**Network Constraints** (for `web.*` tools):
+- Allowed domains (wildcards supported, e.g., `*.wikipedia.org`)
+- Applicable to `web.*` tools
 
-- `domain_allowlist` (array of strings): Allowed domains (wildcards supported, e.g., `*.wikipedia.org`)
-
-**Rate Limiting** (applies to any tool):
+**`rate_limit`** (object, OPTIONAL)
 
 - `rate_limit.calls` (integer): Maximum number of calls
 - `rate_limit.per_seconds` (integer): Time window in seconds
+- Applies to any tool
+
+**`max_response_size`** (integer, OPTIONAL)
+
+- Maximum response/file size in bytes
+
+All constraint fields are OPTIONAL and specified directly on the capability object. Fields set to `null` or omitted indicate no constraint of that type.
 
 #### 5.2.3. Example: Filesystem Capability
 
 ```json
 {
   "tool_pattern": "fs.read",
-  "constraints": {
-    "path_allowlist": [
-      "/workspace/shared/*",
-      "/workspace/docs/*"
-    ],
-    "max_response_size": 10485760
-  }
+  "path_allowlist": [
+    "/workspace/shared/*",
+    "/workspace/docs/*"
+  ],
+  "command_allowlist": null,
+  "subcommand_allowlist": null,
+  "domain_allowlist": null,
+  "max_response_size": 10485760
 }
 ```
 
@@ -583,7 +593,7 @@ This capability allows:
 
 #### 5.3.1. Deny-by-Default
 
-All tool calls are **DENIED** unless explicitly allowed by a capability in the client's Security Scope.
+All tool calls are **DENIED** unless explicitly allowed by a capability in the client's SecurityContext.
 
 #### 5.3.2. Evaluation Algorithm
 
@@ -591,17 +601,19 @@ When a Gateway receives a tool call request:
 
 ```markdown
 1. Extract tool_name and arguments from payload
-2. Load Security Scope from security_token
+2. Load SecurityContext from security_token
 3. Check deny_list:
    IF tool_name in deny_list THEN DENY (explicit deny)
 4. For each capability in capabilities:
    a. IF tool_pattern matches tool_name THEN
-      b. Check all constraints:
-         - path_allowlist (if applicable)
-         - command_allowlist (if applicable)
-         - domain_allowlist (if applicable)
-         - rate_limit (if applicable)
-      c. IF all constraints pass THEN ALLOW
+      b. Check all non-null constraint fields on the capability:
+         - path_allowlist (if present)
+         - command_allowlist (if present)
+         - subcommand_allowlist (if present)
+         - domain_allowlist (if present)
+         - rate_limit (if present)
+         - max_response_size (if present)
+      c. IF all present constraints pass THEN ALLOW
 5. IF no capability matched THEN DENY (default deny)
 ```
 
@@ -613,7 +625,7 @@ When a Gateway receives a tool call request:
 
 #### 5.3.4. Example Evaluation
 
-**Security Scope**:
+**SecurityContext**:
 
 ```json
 {
@@ -621,9 +633,7 @@ When a Gateway receives a tool call request:
   "capabilities": [
     {
       "tool_pattern": "fs.*",
-      "constraints": {
-        "path_allowlist": ["/workspace/shared/*"]
-      }
+      "path_allowlist": ["/workspace/shared/*"]
     }
   ],
   "deny_list": ["fs.delete"]
@@ -672,6 +682,8 @@ Client                          Gateway                         KMS
 
 ### 6.2. Identity Verification
 
+**Deployment Note**: The attestation endpoint (`POST /v1/seal/attest`) is a logical function. It MAY be hosted directly by the Gateway itself, or by a separate orchestrator or proxy service that has authority to issue Security Tokens. The Proxy/Orchestrator Deployment Model ([Section 6.4](#64-proxyorchestrator-deployment-model)) is one example of the latter topology.
+
 #### 6.2.1. Attestation Request
 
 **Method**: `POST /v1/seal/attest`
@@ -682,7 +694,7 @@ Client                          Gateway                         KMS
 {
   "public_key": "<BASE64_ED25519_PUBLIC_KEY>",
   "workload_id": "<WORKLOAD_IDENTIFIER>",
-  "requested_scope": "<SCOPE_NAME>"
+  "security_context": "<SECURITY_CONTEXT_NAME>"
 }
 ```
 
@@ -690,7 +702,7 @@ Client                          Gateway                         KMS
 
 - `public_key` (string, REQUIRED): Client's Ed25519 public key (32 bytes, Base64-encoded)
 - `workload_id` (string, REQUIRED): Verifiable workload identifier (implementation-specific, e.g., container ID, process ID, VM instance metadata)
-- `requested_scope` (string, REQUIRED): Name of the Security Scope the client is requesting
+- `security_context` (string, REQUIRED): Name of the SecurityContext the client is requesting
 
 #### 6.2.2. Workload Identity Verification
 
@@ -723,7 +735,7 @@ If verification fails, the Gateway MUST respond with HTTP 401 Unauthorized.
 ```json
 {
   "status": "error",
-  "error_code": "WORKLOAD_VERIFICATION_FAILED",
+  "error_code": 3000,
   "message": "Container ID not found or labels missing"
 }
 ```
@@ -738,7 +750,7 @@ If verification fails, the Gateway MUST respond with HTTP 401 Unauthorized.
 
 Gateways MAY maintain session state for active clients:
 
-- Map `session_id` → (client_public_key, security_scope, creation_time)
+- Map `session_id` → (client_public_key, security_context, creation_time)
 - Enable fast-path verification (skip repeated JWT signature checks)
 - Support explicit session revocation
 
@@ -904,12 +916,12 @@ Operator JWTs MUST meet the following requirements:
 - **Role Claim**: A deployment-defined role claim asserting `operator` or `admin` level access. The claim name and value format are left to the deployment's IAM authority.
 - **Tenant Claim** (OPTIONAL): `tenant_id` for multi-tenant deployments, enabling scoped administration
 
-#### 6.6.2. Control Plane Scope
+#### 6.6.2. Control Plane Authorization Scope
 
 The following endpoint categories require operator authentication:
 
 - **Tool and Workflow Registration**: Adding, modifying, or removing tool definitions
-- **Security Context Management**: Creating or modifying Security Scopes
+- **Security Context Management**: Creating or modifying SecurityContexts
 - **Session Management**: All endpoints defined in [Section 6.5](#65-session-lifecycle-management)
 
 #### 6.6.3. Transport Requirements
@@ -928,7 +940,7 @@ Operator JWTs and caller SEAL tokens serve distinct purposes and MUST NOT be int
 
 | Property | Caller SEAL Token | Operator JWT |
 | --- | --- | --- |
-| Algorithm | EdDSA (Ed25519) | RS256 |
+| Algorithm | RS256 (RECOMMENDED) or EdDSA | RS256 |
 | Issuer | Gateway KMS | IAM authority |
 | Purpose | Tool call authorization | Control plane administration |
 | Audience | Gateway (tool enforcement) | Gateway (management plane) |
@@ -997,8 +1009,8 @@ Security Tokens MUST conform to [RFC 7519](https://www.rfc-editor.org/rfc/rfc751
 
 #### 7.2.2. Signature Algorithm
 
-- JWT `alg` claim MUST be `"EdDSA"`
-- Signature MUST be computed using Ed25519
+- JWT `alg` claim SHOULD be `"RS256"` (RECOMMENDED) or `"EdDSA"` (acceptable alternative)
+- Conformant implementations MUST support both RS256 and EdDSA for JWT verification
 - Gateways MUST use a KMS or HSM to protect the signing private key
 
 ### 7.3. Canonical Message Construction
@@ -1101,8 +1113,8 @@ SEAL defines the following error codes:
 | 2004 | POLICY_VIOLATION_DOMAIN_NOT_ALLOWED | Domain not in domain_allowlist |
 | 2005 | POLICY_VIOLATION_RATE_LIMIT_EXCEEDED | Too many calls in time window |
 | 2006 | POLICY_VIOLATION_NO_MATCHING_CAPABILITY | No capability grants permission for this call |
-| 3000 | WORKLOAD_VERIFICATION_FAILED | Workload identity could not be verified |
-| 3001 | SCOPE_NOT_FOUND | Requested Security Scope does not exist |
+| 3000 | ATTESTATION_WORKLOAD_VERIFICATION_FAILED | Workload identity could not be verified |
+| 3001 | ATTESTATION_SCOPE_NOT_FOUND | Requested SecurityContext does not exist |
 | 3002 | ATTESTATION_FAILED | General attestation failure |
 
 ### 8.2. Error Response Format
@@ -1116,7 +1128,7 @@ When a Gateway rejects a request, it MUST respond with:
   "protocol": "seal/v1",
   "status": "error",
   "error": {
-    "code": "<ERROR_CODE>",
+    "code": 2002,
     "message": "<HUMAN_READABLE_MESSAGE>",
     "timestamp": "<ISO8601_UTC>",
     "request_id": "<ORIGINAL_REQUEST_ID>",
@@ -1127,6 +1139,8 @@ When a Gateway rejects a request, it MUST respond with:
 }
 ```
 
+The `code` field is an unsigned 32-bit integer (`u32`) corresponding to the numeric error codes defined in [Section 8.1](#81-error-codes).
+
 #### 8.2.2. Example: Policy Violation
 
 ```json
@@ -1134,14 +1148,14 @@ When a Gateway rejects a request, it MUST respond with:
   "protocol": "seal/v1",
   "status": "error",
   "error": {
-    "code": "POLICY_VIOLATION_PATH_NOT_ALLOWED",
+    "code": 2002,
     "message": "Path '/etc/passwd' not in allowlist ['/workspace/shared/*', '/workspace/docs/*']",
     "timestamp": "2026-02-17T14:32:01.583Z",
     "request_id": "req-a1b2c3d4",
     "details": {
       "tool": "fs.read",
       "attempted_path": "/etc/passwd",
-      "security_scope": "read-only-research",
+      "security_context": "read-only-research",
       "allowed_paths": ["/workspace/shared/*", "/workspace/docs/*"]
     }
   }
@@ -1199,14 +1213,14 @@ When a Gateway rejects a request, it MUST respond with:
 **Mitigation**:
 
 1. **Ephemeral Keys**: Client keys are generated per-execution and never persisted, limiting exposure window
-2. **Scope Boundaries**: Even with a compromised key, the attacker is limited to the client's assigned Security Scope
+2. **SecurityContext Boundaries**: Even with a compromised key, the attacker is limited to the client's assigned SecurityContext
 3. **Session Revocation**: Gateways can revoke sessions when suspicious activity is detected
 
 **Blast Radius**:
 
-- If a client key is compromised, the attacker can make tool calls within that client's Security Scope until token expiration (max 1 hour)
+- If a client key is compromised, the attacker can make tool calls within that client's SecurityContext until token expiration (max 1 hour)
 - Attacker CANNOT forge Security Tokens (requires Gateway's KMS key)
-- Attacker CANNOT escalate to a different Security Scope
+- Attacker CANNOT escalate to a different SecurityContext
 
 **Implementation Guidance**:
 
@@ -1234,7 +1248,7 @@ When a Gateway rejects a request, it MUST respond with:
 
 **Mitigation**:
 
-1. **Capability-Level Limits**: Security Scopes can specify `rate_limit` per tool (e.g., 10 calls/minute)
+1. **Capability-Level Limits**: SecurityContexts can specify `rate_limit` per tool (e.g., 10 calls/minute)
 2. **Global Limits**: Gateways SHOULD implement global rate limits per client (e.g., 100 requests/second)
 3. **Attestation Limits**: Gateways SHOULD limit attestation requests per workload (e.g., 5 attempts/minute)
 
@@ -1250,10 +1264,10 @@ When a Gateway rejects a request, it MUST respond with:
 
 **Required Audit Events**:
 
-1. **Attestation Success**: `workload_id`, `security_scope`, `timestamp`
+1. **Attestation Success**: `workload_id`, `security_context`, `timestamp`
 2. **Attestation Failure**: `workload_id`, `failure_reason`, `timestamp`
-3. **Tool Call Success**: `client_id`, `tool_name`, `arguments` (sanitized), `security_scope`, `timestamp`
-4. **Policy Violation**: `client_id`, `tool_name`, `violation_type`, `security_scope`, `timestamp`
+3. **Tool Call Success**: `client_id`, `tool_name`, `arguments` (sanitized), `security_context`, `timestamp`
+4. **Policy Violation**: `client_id`, `tool_name`, `violation_type`, `security_context`, `timestamp`
 5. **Signature Verification Failure**: `client_id`, `timestamp`
 6. **Token Expiry**: `client_id`, `expired_at`
 7. **Session Revocation**: `session_id`, `reason`, `timestamp`
@@ -1425,13 +1439,13 @@ Gateways MAY allow legacy (non-SEAL) clients if configured with:
 {
   "seal": {
     "required": false,
-    "legacy_scope": "default-restricted"
+    "legacy_security_context": "default-restricted"
   }
 }
 ```
 
 - `required: false` allows legacy clients
-- `legacy_scope` assigns a default Security Scope to unauthenticated clients
+- `legacy_security_context` assigns a default SecurityContext to unauthenticated clients
 
 **Security Warning**: This reduces security to pre-SEAL levels. RECOMMENDED only for transition periods.
 
@@ -1464,7 +1478,7 @@ Required changes for existing MCP clients:
    response = requests.post(f"{gateway_url}/v1/seal/attest", json={
        "public_key": base64.b64encode(public_key_bytes).decode(),
        "workload_id": os.environ.get("WORKLOAD_ID"),
-       "requested_scope": "read-only-research"
+       "security_context": "read-only-research"
    })
    security_token = response.json()["security_token"]
    ```
@@ -1651,21 +1665,21 @@ IANA is requested to register the following JWT claim names in the JSON Web Toke
 
 | Claim Name | Description | Reference |
 | ------------ | ------------- | ----------- |
-| `scp` | Security Scope name | RFC XXXX, Section 4.2.2 |
+| `scp` | SecurityContext name (short wire name) | RFC XXXX, Section 4.2.2 |
 | `wid` | Workload Identity | RFC XXXX, Section 4.2.2 |
 | `exec_id` | Execution correlation identifier | RFC XXXX, Section 4.2.2 |
 | `tenant_id` | Multi-tenant routing identifier | RFC XXXX, Section 4.2.2 |
 | `nid` | Node identifier (infrastructure extension) | RFC XXXX, Section 10.2.2 |
 
-### 13.4. Security Scope Registry
+### 13.4. SecurityContext Registry
 
-IANA is requested to create a registry for standard Security Scope names:
+IANA is requested to create a registry for standard SecurityContext names:
 
-**Registry Name**: SEAL Standard Security Scopes
+**Registry Name**: SEAL Standard SecurityContexts
 
-**Purpose**: Reserve well-known scope names to prevent conflicts
+**Purpose**: Reserve well-known SecurityContext names to prevent conflicts
 
-| Scope Name | Description | Reference |
+| SecurityContext Name | Description | Reference |
 | ------------ | ------------- | ----------- |
 | `read-only-research` | Read-only access to safe domains and shared files | RFC XXXX, Appendix A.1 |
 | `code-assistant` | Read/write code files, run build tools | RFC XXXX, Appendix A.2 |
@@ -1714,15 +1728,15 @@ IANA is requested to create a registry for standard Security Scope names:
 
 ---
 
-## Appendix A: Security Scope Examples
+## Appendix A: SecurityContext Examples
 
-This appendix provides reference Security Scope definitions for common use cases.
+This appendix provides reference SecurityContext definitions for common use cases.
 
 ### A.1. `read-only-research`
 
 **Use Case**: AI agent that searches the web and reads shared documentation, but cannot modify files or execute commands.
 
-**Scope Definition**:
+**SecurityContext Definition**:
 
 ```json
 {
@@ -1731,36 +1745,30 @@ This appendix provides reference Security Scope definitions for common use cases
   "capabilities": [
     {
       "tool_pattern": "web.search",
-      "constraints": {
-        "domain_allowlist": [
-          "*.google.com",
-          "*.wikipedia.org",
-          "*.arxiv.org",
-          "*.github.com"
-        ],
-        "rate_limit": {
-          "calls": 10,
-          "per_seconds": 60
-        }
+      "domain_allowlist": [
+        "*.google.com",
+        "*.wikipedia.org",
+        "*.arxiv.org",
+        "*.github.com"
+      ],
+      "rate_limit": {
+        "calls": 10,
+        "per_seconds": 60
       }
     },
     {
       "tool_pattern": "fs.read",
-      "constraints": {
-        "path_allowlist": [
-          "/workspace/shared/*",
-          "/workspace/docs/*"
-        ],
-        "max_response_size": 10485760
-      }
+      "path_allowlist": [
+        "/workspace/shared/*",
+        "/workspace/docs/*"
+      ],
+      "max_response_size": 10485760
     },
     {
       "tool_pattern": "fs.list",
-      "constraints": {
-        "path_allowlist": [
-          "/workspace/*"
-        ]
-      }
+      "path_allowlist": [
+        "/workspace/*"
+      ]
     }
   ],
   "deny_list": [
@@ -1776,7 +1784,7 @@ This appendix provides reference Security Scope definitions for common use cases
 
 **Use Case**: AI agent that generates code, runs tests, and manages git repositories.
 
-**Scope Definition**:
+**SecurityContext Definition**:
 
 ```json
 {
@@ -1785,41 +1793,35 @@ This appendix provides reference Security Scope definitions for common use cases
   "capabilities": [
     {
       "tool_pattern": "fs.*",
-      "constraints": {
-        "path_allowlist": [
-          "/workspace/src/*",
-          "/workspace/tests/*",
-          "/workspace/docs/*"
-        ],
-        "max_response_size": 52428800
-      }
+      "path_allowlist": [
+        "/workspace/src/*",
+        "/workspace/tests/*",
+        "/workspace/docs/*"
+      ],
+      "max_response_size": 52428800
     },
     {
       "tool_pattern": "cmd.run",
-      "constraints": {
-        "command_allowlist": [
-          "git",
-          "npm",
-          "cargo",
-          "pytest",
-          "make",
-          "cargo"
-        ]
-      }
+      "command_allowlist": [
+        "git",
+        "npm",
+        "cargo",
+        "pytest",
+        "make"
+      ],
+      "subcommand_allowlist": null
     },
     {
       "tool_pattern": "web.search",
-      "constraints": {
-        "domain_allowlist": [
-          "*.stackoverflow.com",
-          "*.github.com",
-          "docs.rs",
-          "crates.io"
-        ],
-        "rate_limit": {
-          "calls": 20,
-          "per_seconds": 60
-        }
+      "domain_allowlist": [
+        "*.stackoverflow.com",
+        "*.github.com",
+        "docs.rs",
+        "crates.io"
+      ],
+      "rate_limit": {
+        "calls": 20,
+        "per_seconds": 60
       }
     }
   ],
@@ -1837,7 +1839,7 @@ This appendix provides reference Security Scope definitions for common use cases
 
 **Use Case**: Highly trusted agent with full system access (use only for administrative tasks).
 
-**Scope Definition**:
+**SecurityContext Definition**:
 
 ```json
 {
@@ -1852,7 +1854,7 @@ This appendix provides reference Security Scope definitions for common use cases
 }
 ```
 
-**Security Warning**: This scope grants unlimited access. It SHOULD only be used:
+**Security Warning**: This SecurityContext grants unlimited access. It SHOULD only be used:
 
 - For administrative/maintenance agents
 - With human-in-the-loop approval
@@ -1875,10 +1877,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 
 class SEALClient:
-    def __init__(self, gateway_url, workload_id, security_scope):
+    def __init__(self, gateway_url, workload_id, security_context):
         self.gateway_url = gateway_url
         self.workload_id = workload_id
-        self.security_scope = security_scope
+        self.security_context = security_context
         self.private_key = None
         self.public_key = None
         self.security_token = None
@@ -1902,7 +1904,7 @@ class SEALClient:
             json={
                 "public_key": public_key_b64,
                 "workload_id": self.workload_id,
-                "requested_scope": self.security_scope
+                "security_context": self.security_context
             },
             timeout=5
         )
@@ -1968,7 +1970,7 @@ if __name__ == "__main__":
     client = SEALClient(
         gateway_url="https://gateway.example.com",
         workload_id=os.environ.get("WORKLOAD_ID", "docker://localhost"),
-        security_scope="read-only-research"
+        security_context="read-only-research"
     )
     
     # Attest
@@ -2017,11 +2019,11 @@ async fn handle_seal_request(
     let tool_name = envelope.payload["params"]["name"].as_str()?;
     let arguments = &envelope.payload["params"]["arguments"];
     
-    // 6. Load Security Scope
-    let security_scope = load_security_scope(&claims.scp)?;
+    // 6. Load SecurityContext
+    let security_context = load_security_context(&claims.scp)?;
     
     // 7. Evaluate policy
-    policy_engine.evaluate(&security_scope, tool_name, arguments)?;
+    policy_engine.evaluate(&security_context, tool_name, arguments)?;
     
     // 8. Audit log
     audit_log.log(AuditEvent::ToolCallAuthorized {
@@ -2104,7 +2106,7 @@ This appendix maps SEAL features to common compliance frameworks.
 
 | Control | SEAL Feature | Evidence |
 | --------- | -------------- | ---------- |
-| CC6.1 - Logical Access | Security Scopes with capability-based authorization | Security Scope definitions in version control |
+| CC6.1 - Logical Access | SecurityContexts with capability-based authorization | SecurityContext definitions in version control |
 | CC6.2 - Authentication | Ed25519 cryptographic signatures + attestation | Audit log of attestation successes |
 | CC6.3 - Authorization | Per-request policy evaluation | Audit log of tool calls with approved scopes |
 | CC6.6 - Audit Logging | All tool calls logged with non-repudiation | SIEM integration with signature verification |
@@ -2122,8 +2124,8 @@ This appendix maps SEAL features to common compliance frameworks.
 
 | Function | Category | SEAL Control |
 | ---------- | ---------- | -------------- |
-| Govern | GOVERN 1.3 - Third-party risk | Tool server isolation, Security Scope enforcement |
-| Map | MAP 1.2 - Categorization | Security Scope taxonomy (read-only, code-assistant, etc.) |
+| Govern | GOVERN 1.3 - Third-party risk | Tool server isolation, SecurityContext enforcement |
+| Map | MAP 1.2 - Categorization | SecurityContext taxonomy (read-only, code-assistant, etc.) |
 | Measure | MEASURE 2.7 - AI system monitoring | Policy violation metrics, audit log analysis |
 | Manage | MANAGE 2.1 - Incident response | Session revocation, real-time policy violation alerts |
 
@@ -2132,8 +2134,8 @@ This appendix maps SEAL features to common compliance frameworks.
 | Control | SEAL Implementation |
 | --------- | --------------------- |
 | A.9.2.1 - User registration | Attestation protocol with workload identity verification |
-| A.9.2.2 - Privileged access | Security Scopes with least privilege principle |
-| A.9.2.4 - Review of user access rights | Security Scope definitions in code review |
+| A.9.2.2 - Privileged access | SecurityContexts with least privilege principle |
+| A.9.2.4 - Review of user access rights | SecurityContext definitions in code review |
 | A.9.4.1 - Information access restriction | Deny-by-default policy evaluation |
 | A.12.4.1 - Event logging | SEAL audit events with cryptographic proof |
 
@@ -2260,7 +2262,7 @@ The operator JWT requirements are identical to those defined in [Section 6.6](#6
 | --- | --- |
 | Default port | `50055` |
 | Security | mTLS or TLS with bearer token metadata |
-| JWT verification | Identical to HTTP transport (RS256 for operator, EdDSA for caller) |
+| JWT verification | Identical to HTTP transport (RS256 for operator; RS256 or EdDSA for caller) |
 | Envelope format | `SealEnvelope` serialized as JSON within protobuf `bytes` field |
 | Error reporting | gRPC status codes mapped from SEAL error codes ([Section 8.1](#81-error-codes)) |
 
@@ -2294,13 +2296,13 @@ The following topics are considered for future versions of SEAL:
 
 ### F.2. Policy Language Standardization
 
-**Problem**: This RFC describes Security Scope semantics but doesn't mandate a specific policy language.
+**Problem**: This RFC describes SecurityContext semantics but doesn't mandate a specific policy language.
 
 **Proposed Solution**:
 
 - Define standard policy language (Cedar, OPA Rego, or SEAL-specific DSL)
-- Create JSON Schema for portable Security Scope definitions
-- Enable cross-platform Security Scope sharing
+- Create JSON Schema for portable SecurityContext definitions
+- Enable cross-platform SecurityContext sharing
 
 ### F.3. Multi-Party Trust
 
