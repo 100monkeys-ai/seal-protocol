@@ -26,8 +26,8 @@ pip install seal
 **Editable install from source:**
 
 ```bash
-git clone https://github.com/100monkeys-ai/secure-model-context-protocol.git
-cd secure-model-context-protocol
+git clone https://github.com/100monkeys-ai/seal-protocol.git
+cd seal-protocol
 pip install -e "sdk/python[dev]"
 ```
 

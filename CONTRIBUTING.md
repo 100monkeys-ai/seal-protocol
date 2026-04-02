@@ -53,8 +53,8 @@ The `RFC/seal-v1-specification.md` document is the canonical definition of the S
 
 ```bash
 # Clone the repo
-git clone https://github.com/100monkeys-ai/secure-model-context-protocol.git
-cd secure-model-context-protocol
+git clone https://github.com/100monkeys-ai/seal-protocol.git
+cd seal-protocol
 
 # Create and activate a virtual environment
 python -m venv .venv

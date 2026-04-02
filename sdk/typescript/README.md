@@ -26,8 +26,8 @@ npm install @100monkeys/seal
 **From source:**
 
 ```bash
-git clone https://github.com/100monkeys-ai/secure-model-context-protocol.git
-cd secure-model-context-protocol/sdk/typescript
+git clone https://github.com/100monkeys-ai/seal-protocol.git
+cd seal-protocol/sdk/typescript
 npm install
 npm run build
 ```

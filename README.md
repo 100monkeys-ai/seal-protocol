@@ -5,43 +5,46 @@
 [![Python SDK](https://img.shields.io/badge/python_sdk-0.1.0-green)](sdk/python)
 [![TypeScript SDK](https://img.shields.io/badge/typescript_sdk-0.1.0-green)](sdk/typescript)
 
-> **Join the official RFC discussion here:** <https://github.com/orgs/modelcontextprotocol/discussions/689>
-
-SEAL is a security extension for the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) that adds **cryptographic agent identity**, **bounded-authorization SecurityContexts**, **Ed25519 envelope signing**, and **PolicyEngine enforcement** to every tool call.
-
-Without SEAL, an MCP gateway cannot verify *which* agent is making a request, *what* that agent is permitted to do, or *prove* that the agent made the call at all. This creates the [Confused Deputy Problem](docs/concepts.md#confused-deputy): a privileged gateway forwards tool calls under its own elevated credentials without verifying the caller's authorization. SEAL closes this gap at the protocol layer.
+SEAL is a cryptographic transport protocol that wraps any JSON
+payload in a signed, attested envelope — providing cryptographic
+identity, bounded authorization, integrity, non-repudiation,
+and replay prevention. It is transport-agnostic (HTTP, gRPC,
+WebSocket, VSOCK) and payload-agnostic (MCP, REST, custom RPC).
+SEAL operates on a zero-trust model: callers are untrusted by
+default, and a gateway serves as the root of trust for every
+message.
 
 ---
 
 ## Architecture
 
-```markdown
+```text
 ┌─────────────────────────────────────────────────────────┐
-│                     Agent Container                     │
+│                        Caller                           │
 │                                                         │
 │  1. Generate ephemeral Ed25519 keypair (never stored)   │
 │  2. Attest to Gateway → receive signed security_token   │
-│  3. Wrap each tool call in SealEnvelope                 │
+│  3. Wrap each request in SealEnvelope                   │
 │     { protocol, security_token, signature, payload,     │
 │       timestamp }                                       │
 └──────────────────────────┬──────────────────────────────┘
                            │  SealEnvelope (over TLS)
                            ▼
 ┌─────────────────────────────────────────────────────────┐
-│              SealMiddleware / Gateway                   │
+│              SealMiddleware / Gateway                    │
 │                                                         │
 │  1. Verify Ed25519 signature (binding: token+payload+ts)│
 │  2. Validate security_token JWT (expiry, issuer)        │
 │  3. Check timestamp within ±30s replay window           │
-│  4. Evaluate SecurityContext via PolicyEngine:          │
+│  4. Evaluate SecurityContext via PolicyEngine:           │
 │       deny_list → capabilities → default deny           │
-│  5. Forward unwrapped MCP payload to Tool Server        │
+│  5. Forward unwrapped payload to downstream service     │
 └──────────────────────────┬──────────────────────────────┘
-                           │  Standard MCP JSON-RPC
+                           │  Unwrapped JSON payload
                            ▼
 ┌─────────────────────────────────────────────────────────┐
-│                     Tool Server                         │
-│   (no SEAL awareness required — receives plain MCP)     │
+│                  Downstream Service                     │
+│     (no SEAL awareness required — receives plain JSON)  │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -50,13 +53,13 @@ Without SEAL, an MCP gateway cannot verify *which* agent is making a request, *w
 ## Core Concepts
 
 | Concept | Description |
-| --------- | ------------- |
-| **SealEnvelope** | Signed wrapper around each MCP tool call. Wire field: `security_token`. |
-| **Attestation** | One-time handshake where the agent proves its Ed25519 public key + workload ID and receives a signed JWT. |
-| **SecurityToken / security_token** | JWT issued by the Gateway binding the agent to a named `SecurityContext`. |
-| **SecurityContext** | Named permission boundary (e.g., `"research-safe"`) defining `capabilities[]` and `deny_list[]`. |
-| **Capability** | Fine-grained permission: tool pattern + optional path/command/domain allowlists + rate limit. |
-| **PolicyEngine** | Evaluates each tool call: deny list first → match capabilities → default deny. |
+| --- | --- |
+| **SealEnvelope** | Signed wrapper: version, token, sig, payload, ts. |
+| **Attestation** | Proves Ed25519 pubkey + workload ID; returns JWT. |
+| **SecurityToken** | JWT binding caller to a SecurityContext. |
+| **SecurityContext** | Permission boundary: capabilities + deny list. |
+| **Capability** | Tool pattern + allowlists + optional rate limit. |
+| **PolicyEngine** | Deny list, then capabilities, then default deny. |
 
 See [docs/concepts.md](docs/concepts.md) for full definitions.
 
@@ -98,7 +101,9 @@ const client = new SEALClient(
 await client.attest();
 
 // Step 2: Call a tool
-const result = await client.callTool("web_search", { query: "SEAL specification" });
+const result = await client.callTool(
+  "web_search", { query: "SEAL specification" },
+);
 console.log(result);
 
 // Clean up ephemeral key
@@ -110,7 +115,7 @@ client.dispose();
 ## Contents
 
 | Path | Description |
-| ------ | ------------- |
+| --- | --- |
 | [`RFC/seal-v1-specification.md`](RFC/seal-v1-specification.md) | Full IETF-style protocol specification |
 | [`sdk/python/`](sdk/python/) | Python 3.11+ client SDK |
 | [`sdk/typescript/`](sdk/typescript/) | TypeScript / Node.js 20+ client SDK |
@@ -124,7 +129,9 @@ client.dispose();
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues go to `security@100monkeys.ai` — see [SECURITY.md](SECURITY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+Security issues go to `security@100monkeys.ai` —
+see [SECURITY.md](SECURITY.md).
 
 ## License
 
