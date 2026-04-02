@@ -68,6 +68,9 @@ Copyright (C) 2026. This document may be reproduced and distributed in accordanc
    6.1. [Handshake Flow](#61-handshake-flow)  
    6.2. [Identity Verification](#62-identity-verification)  
    6.3. [Token Issuance](#63-token-issuance)  
+   6.4. [Proxy/Orchestrator Deployment Model](#64-proxyorchestrator-deployment-model)  
+   6.5. [Session Lifecycle Management](#65-session-lifecycle-management)  
+   6.6. [Control Plane Authentication](#66-control-plane-authentication)  
 7. [Cryptographic Specifications](#7-cryptographic-specifications)  
    7.1. [Signature Algorithm (Ed25519)](#71-signature-algorithm-ed25519)  
    7.2. [Token Format (JWT)](#72-token-format-jwt)  
@@ -83,25 +86,32 @@ Copyright (C) 2026. This document may be reproduced and distributed in accordanc
    9.4. [Token Theft](#94-token-theft)  
    9.5. [Rate Limiting](#95-rate-limiting)  
    9.6. [Audit Trail](#96-audit-trail)  
-10. [Backward Compatibility](#10-backward-compatibility)  
-    10.1. [Protocol Negotiation](#101-protocol-negotiation)  
-    10.2. [Legacy Client Support](#102-legacy-client-support)  
-    10.3. [Migration Strategy](#103-migration-strategy)  
-11. [Interoperability](#11-interoperability)  
-    11.1. [Test Vectors](#111-test-vectors)  
-    11.2. [Compliance Requirements](#112-compliance-requirements)  
-12. [IANA Considerations](#12-iana-considerations)  
-    12.1. [Protocol Identifier Registry](#121-protocol-identifier-registry)  
-    12.2. [Error Code Registry](#122-error-code-registry)  
-    12.3. [JWT Claim Names Registry](#123-jwt-claim-names-registry)  
-    12.4. [Security Scope Registry](#124-security-scope-registry)  
-13. [References](#13-references)  
-    13.1. [Normative References](#131-normative-references)  
-    13.2. [Informative References](#132-informative-references)  
+10. [Infrastructure Extension: Node-to-Node Authentication](#10-infrastructure-extension-node-to-node-authentication)  
+    10.1. [SealNodeEnvelope](#101-sealnodeenvelope)  
+    10.2. [Node Attestation](#102-node-attestation)  
+    10.3. [Node Key Management](#103-node-key-management)  
+    10.4. [Applicable Operations](#104-applicable-operations)  
+11. [Backward Compatibility](#11-backward-compatibility)  
+    11.1. [Protocol Negotiation](#111-protocol-negotiation)  
+    11.2. [Legacy Client Support](#112-legacy-client-support)  
+    11.3. [Migration Strategy](#113-migration-strategy)  
+12. [Interoperability](#12-interoperability)  
+    12.1. [Test Vectors](#121-test-vectors)  
+    12.2. [Compliance Requirements](#122-compliance-requirements)  
+13. [IANA Considerations](#13-iana-considerations)  
+    13.1. [Protocol Identifier Registry](#131-protocol-identifier-registry)  
+    13.2. [Error Code Registry](#132-error-code-registry)  
+    13.3. [JWT Claim Names Registry](#133-jwt-claim-names-registry)  
+    13.4. [Security Scope Registry](#134-security-scope-registry)  
+14. [References](#14-references)  
+    14.1. [Normative References](#141-normative-references)  
+    14.2. [Informative References](#142-informative-references)  
 Appendix A: [Security Scope Examples](#appendix-a-security-scope-examples)  
 Appendix B: [Implementation Guidelines](#appendix-b-implementation-guidelines)  
 Appendix C: [Test Vectors](#appendix-c-test-vectors)  
 Appendix D: [Compliance Mapping](#appendix-d-compliance-mapping)  
+Appendix E: [gRPC Transport Binding](#appendix-e-grpc-transport-binding)  
+Appendix F: [Future Work](#appendix-f-future-work)  
 
 ---
 
@@ -395,6 +405,11 @@ The following claims MUST be present:
 - `jti` (JWT ID): Unique identifier for this token (for revocation tracking)
 - `aud` (Audience): Intended recipient (e.g., gateway hostname)
 - `iss` (Issuer): Gateway identifier
+
+**Extension Claims**:
+
+- `exec_id` (Execution ID, RECOMMENDED): Execution correlation identifier. Binds all tool calls from a single execution to one audit chain. When present, Gateways SHOULD include this value in all audit events for that session.
+- `tenant_id` (Tenant ID, OPTIONAL): Multi-tenant routing identifier. Used by multi-tenant gateway deployments to partition sessions, tool registries, and audit logs. Gateways MAY use this claim for routing and isolation decisions.
 
 #### 4.2.3. Example JWT Claims
 
@@ -726,6 +741,198 @@ Gateways MAY maintain session state for active clients:
 - Map `session_id` → (client_public_key, security_scope, creation_time)
 - Enable fast-path verification (skip repeated JWT signature checks)
 - Support explicit session revocation
+
+### 6.4. Proxy/Orchestrator Deployment Model
+
+In addition to the standard attestation flow ([Section 6.1](#61-handshake-flow)), SEAL defines a **Proxy/Orchestrator Deployment Model** as a first-class topology for deployments where a trusted orchestrator manages client lifecycle.
+
+In this model, a trusted orchestrator MAY pre-provision SEAL sessions on behalf of callers via `POST /v1/seal/sessions` (operator-authenticated; see [Section 6.6](#66-control-plane-authentication)). When this model is used, callers skip the `/v1/seal/attest` flow entirely.
+
+#### 6.4.1. Session Provisioning Flow
+
+```markdown
+Orchestrator                    Gateway                         KMS
+  │                               │                               │
+  │──1. Generate Keypair────────>│                               │
+  │   (Ed25519, on behalf of     │                               │
+  │    the caller)                │                               │
+  │                               │                               │
+  │──2. POST /v1/seal/sessions──>│                               │
+  │   {execution_id, agent_id,   │                               │
+  │    security_context_name,     │                               │
+  │    public_key_b64}            │                               │
+  │                               │──3. Sign Token───────────────>│
+  │                               │<──4. Signed JWT───────────────│
+  │                               │                               │
+  │<──5. Session Created─────────│                               │
+  │   {security_token, expires_at}│                               │
+  │                               │                               │
+  │──6. Inject private_key +     │                               │
+  │     security_token into       │                               │
+  │     caller environment        │                               │
+  │                               │                               │
+  ├──7. Spawn Caller─────────────────────────────────────────────>│
+  │                               │                               │
+  │         Caller                │                               │
+  │           │──8. Tool Call────>│                               │
+  │           │   (with token,    │                               │
+  │           │    signed envelope)│                               │
+```
+
+#### 6.4.2. Provisioned Session Record
+
+The provisioned session record MUST contain the following fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `execution_id` | string (UUID) | Correlation identifier for the caller execution |
+| `agent_id` | string | Logical caller identity |
+| `security_context_name` | string | Named security context to apply |
+| `public_key_b64` | string (base64) | Caller's ephemeral Ed25519 public key |
+| `security_token` | string (JWT) | Pre-issued SEAL token for the caller |
+| `expires_at` | string (ISO 8601) | Token expiry timestamp |
+| `allowed_tool_patterns` | array of strings (glob) | Tool patterns permitted for this session |
+| `session_status` | enum | `Active`, `Expired`, or `Revoked` |
+
+#### 6.4.3. Key Lifecycle
+
+The orchestrator generates the ephemeral Ed25519 keypair on the caller's behalf, pre-mints the Security Token, and injects both the private key and the token into the caller's environment before it starts. The gateway session is pre-created before the caller's first request arrives.
+
+**Key handling requirements**:
+
+- The private key MUST be held in orchestrator process memory only for the duration between generation and caller spawn. It MUST NOT be persisted to disk.
+- The private key MUST be securely erased (zeroed) from orchestrator memory after injection into the caller environment.
+- The caller receives the private key via environment variable and holds it in process memory for the lifetime of the execution.
+- All other key management rules from [Section 7.4](#74-key-management) apply.
+
+#### 6.4.4. Relationship to Standard Attestation
+
+The Proxy/Orchestrator Deployment Model and the standard attestation model ([Section 6.1](#61-handshake-flow)) are both first-class topologies. A conformant Gateway implementation MAY support either or both. When both are supported, the Gateway MUST enforce identical policy evaluation semantics ([Section 5.3](#53-policy-evaluation-semantics)) regardless of which model was used to establish the session.
+
+### 6.5. Session Lifecycle Management
+
+Gateways that support the Proxy/Orchestrator Deployment Model ([Section 6.4](#64-proxyorchestrator-deployment-model)) MUST expose a session management API for operator-authenticated session CRUD operations.
+
+#### 6.5.1. Session Management Endpoints
+
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| `POST` | `/v1/seal/sessions` | Operator JWT | Create a new session |
+| `GET` | `/v1/seal/sessions` | Operator JWT | List all active sessions |
+| `GET` | `/v1/seal/sessions/{execution_id}` | Operator JWT | Retrieve a session by execution ID |
+| `DELETE` | `/v1/seal/sessions/{execution_id}` | Operator JWT | Revoke a session (emits audit event) |
+
+All endpoints require operator authentication as defined in [Section 6.6](#66-control-plane-authentication).
+
+#### 6.5.2. Session Status Transitions
+
+Sessions follow a simple lifecycle:
+
+```markdown
+┌──────────┐     TTL elapsed     ┌──────────┐
+│  Active  │────────────────────>│ Expired  │
+└──────────┘                     └──────────┘
+      │
+      │  DELETE /v1/seal/sessions/{execution_id}
+      ▼
+┌──────────┐
+│ Revoked  │
+└──────────┘
+```
+
+- `Active → Expired` — Token TTL elapsed. The Gateway MUST reject tool calls with `TOKEN_EXPIRED` (error code 1003).
+- `Active → Revoked` — Explicit `DELETE` call by an operator. The Gateway MUST reject tool calls with `SESSION_INACTIVE` (error code 1006) and MUST emit an audit event ([Section 9.6](#96-audit-trail)).
+
+Expired and Revoked are terminal states. A new session MUST be created to restore access.
+
+#### 6.5.3. Create Session Request
+
+**Method**: `POST /v1/seal/sessions`
+
+**Request Body**:
+
+```json
+{
+  "execution_id": "550e8400-e29b-41d4-a716-446655440000",
+  "agent_id": "code-assistant-7",
+  "security_context_name": "code-assistant",
+  "public_key_b64": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  "allowed_tool_patterns": ["fs.*", "cmd.run", "web.search"]
+}
+```
+
+**Response Body** (on success):
+
+```json
+{
+  "status": "success",
+  "execution_id": "550e8400-e29b-41d4-a716-446655440000",
+  "security_token": "<JWT_STRING>",
+  "expires_at": "2026-02-17T15:32:01.000Z",
+  "session_status": "Active"
+}
+```
+
+#### 6.5.4. Revoke Session Request
+
+**Method**: `DELETE /v1/seal/sessions/{execution_id}`
+
+**Response Body** (on success):
+
+```json
+{
+  "status": "success",
+  "execution_id": "550e8400-e29b-41d4-a716-446655440000",
+  "session_status": "Revoked",
+  "revoked_at": "2026-02-17T14:45:00.000Z"
+}
+```
+
+The Gateway MUST emit a `Session Revocation` audit event as specified in [Section 9.6](#96-audit-trail).
+
+### 6.6. Control Plane Authentication
+
+A conformant gateway deployment MAY expose a management control plane for operator-facing administration. Control plane endpoints MUST be protected by an operator JWT distinct from caller SEAL tokens.
+
+#### 6.6.1. Operator JWT Requirements
+
+Operator JWTs MUST meet the following requirements:
+
+- **Algorithm**: RS256 ([RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.txt), Section 3.3)
+- **Issuer** (`iss`): The deployment's IAM authority (e.g., identity provider)
+- **Audience** (`aud`): Gateway identifier
+- **Role Claim**: A deployment-defined role claim asserting `operator` or `admin` level access. The claim name and value format are left to the deployment's IAM authority.
+- **Tenant Claim** (OPTIONAL): `tenant_id` for multi-tenant deployments, enabling scoped administration
+
+#### 6.6.2. Control Plane Scope
+
+The following endpoint categories require operator authentication:
+
+- **Tool and Workflow Registration**: Adding, modifying, or removing tool definitions
+- **Security Context Management**: Creating or modifying Security Scopes
+- **Session Management**: All endpoints defined in [Section 6.5](#65-session-lifecycle-management)
+
+#### 6.6.3. Transport Requirements
+
+Operator JWT tokens MUST be transmitted via the `Authorization` HTTP header:
+
+```markdown
+Authorization: Bearer <operator_jwt>
+```
+
+All control plane endpoints MUST be served over TLS 1.3 or later, consistent with the transport security requirements in [Section 9.2](#92-man-in-the-middle-protection).
+
+#### 6.6.4. Separation from SEAL Tokens
+
+Operator JWTs and caller SEAL tokens serve distinct purposes and MUST NOT be interchangeable:
+
+| Property | Caller SEAL Token | Operator JWT |
+| --- | --- | --- |
+| Algorithm | EdDSA (Ed25519) | RS256 |
+| Issuer | Gateway KMS | IAM authority |
+| Purpose | Tool call authorization | Control plane administration |
+| Audience | Gateway (tool enforcement) | Gateway (management plane) |
+| Typical TTL | 1 hour | Deployment-defined |
 
 ---
 
@@ -1060,13 +1267,117 @@ When a Gateway rejects a request, it MUST respond with:
 
 ---
 
-## 10. Backward Compatibility
+## 10. Infrastructure Extension: Node-to-Node Authentication
 
-### 10.1. Protocol Negotiation
+In clustered or multi-node deployments, SEAL provides a node-to-node authentication extension using a variant of the Security Envelope called `SealNodeEnvelope`. This extension enables cluster nodes to authenticate and communicate securely using the same envelope pattern as client-to-gateway communication.
+
+### 10.1. SealNodeEnvelope
+
+The `SealNodeEnvelope` shares the same outer structure as the standard `SealEnvelope` ([Section 4.1](#41-security-envelope-structure)):
+
+```json
+{
+  "protocol": "seal/v1",
+  "node_security_token": "<RS256_JWT>",
+  "signature": "<BASE64_ED25519_SIGNATURE>",
+  "payload": {
+    // Node-to-node message
+  },
+  "timestamp": "<ISO8601_UTC>"
+}
+```
+
+The key differences from the standard `SealEnvelope` are:
+
+| Property | SealEnvelope (Client) | SealNodeEnvelope (Node) |
+| --- | --- | --- |
+| Keypair lifecycle | Ephemeral (per-execution) | Persistent (stored on disk) |
+| Token field name | `security_token` | `node_security_token` |
+| Token algorithm | EdDSA | RS256 |
+| Identity stability | Transient (new identity per restart) | Stable (identity persists across restarts) |
+
+### 10.2. Node Attestation
+
+Nodes MUST attest with the cluster controller to receive a `NodeSecurityToken`.
+
+#### 10.2.1. Node Attestation Endpoint
+
+**Method**: `POST /cluster/attest`
+
+**Authentication**: Unauthenticated (rate-limited; see [Section 9.5](#95-rate-limiting))
+
+**Request Body**:
+
+```json
+{
+  "node_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "public_key": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  "nonce": "f7e6d5c4-b3a2-1098-fedc-ba9876543210"
+}
+```
+
+**Field Definitions**:
+
+- `node_id` (string, REQUIRED): UUID identifying the node. Stable across restarts.
+- `public_key` (string, REQUIRED): Base64-encoded Ed25519 public key from the node's persistent keypair.
+- `nonce` (string, REQUIRED): UUID used for replay prevention. Each attestation request MUST use a unique nonce.
+
+**Response Body** (on success):
+
+```json
+{
+  "status": "success",
+  "node_security_token": "<RS256_JWT>",
+  "expires_at": "2026-02-17T15:32:01.000Z"
+}
+```
+
+#### 10.2.2. NodeSecurityToken
+
+The `NodeSecurityToken` is an RS256 JWT signed by the cluster controller's KMS key.
+
+**JWT Claims**:
+
+- `sub` (Subject): Node identifier (`node_id`)
+- `iat` (Issued At): Unix timestamp of issuance
+- `exp` (Expires): Unix timestamp of expiry (1-hour TTL)
+- `nid` (Node ID): Duplicate of `node_id` for unambiguous identification
+- `role` (Role): Node role in the cluster (e.g., `"worker"`, `"controller"`)
+
+**Token Lifetime**:
+
+- Tokens MUST have a maximum TTL of 1 hour (3600 seconds)
+- Nodes MUST re-attest at least 120 seconds before token expiry to ensure continuous connectivity
+- Controllers MUST reject requests with expired `NodeSecurityTokens`
+
+### 10.3. Node Key Management
+
+Unlike client keys ([Section 7.4.1](#741-client-keys-ephemeral)), node keys are persistent:
+
+- Nodes MUST generate an Ed25519 keypair on first startup and persist it to disk
+- The private key file MUST be protected with filesystem permissions (`0600`, owner-only read/write)
+- Node identity is stable across restarts — the same keypair and `node_id` are reused
+- Key rotation is RECOMMENDED periodically (e.g., every 90 days) via a coordinated re-registration process
+
+### 10.4. Applicable Operations
+
+The `SealNodeEnvelope` is applicable to the following inter-node operations:
+
+- **Node Registration**: A new node joining the cluster
+- **Heartbeat**: Periodic liveness signals from worker nodes to the controller
+- **Remote Access**: Authenticated requests between cluster nodes (e.g., remote tool execution, state synchronization)
+
+All other SEAL security properties apply: signature verification, timestamp freshness ([Section 9.1](#91-replay-attack-prevention)), and audit logging ([Section 9.6](#96-audit-trail)).
+
+---
+
+## 11. Backward Compatibility
+
+### 11.1. Protocol Negotiation
 
 SEAL-capable Gateways SHOULD support both SEAL and legacy MCP clients during a migration period.
 
-#### 10.1.1. Capability Advertisement
+#### 11.1.1. Capability Advertisement
 
 During MCP initialization, Gateways SHOULD advertise SEAL support:
 
@@ -1097,16 +1408,16 @@ During MCP initialization, Gateways SHOULD advertise SEAL support:
 }
 ```
 
-#### 10.1.2. Client Detection
+#### 11.1.2. Client Detection
 
 Clients can detect SEAL support by:
 
 1. Checking for `extensions.seal.supported == true` in initialization response
 2. Checking if attestation endpoint responds with HTTP 200 (not 404)
 
-### 10.2. Legacy Client Support
+### 11.2. Legacy Client Support
 
-#### 10.2.1. Fallback Mode
+#### 11.2.1. Fallback Mode
 
 Gateways MAY allow legacy (non-SEAL) clients if configured with:
 
@@ -1124,7 +1435,7 @@ Gateways MAY allow legacy (non-SEAL) clients if configured with:
 
 **Security Warning**: This reduces security to pre-SEAL levels. RECOMMENDED only for transition periods.
 
-#### 10.2.2. Upgrade Path
+#### 11.2.2. Upgrade Path
 
 ```markdown
 Phase 1: Deploy SEAL-capable Gateway (seal.required = false)
@@ -1134,9 +1445,9 @@ Phase 4: Enable enforcement (seal.required = true)
 Phase 5: Remove legacy code paths
 ```
 
-### 10.3. Migration Strategy
+### 11.3. Migration Strategy
 
-#### 10.3.1. Client-Side Changes
+#### 11.3.1. Client-Side Changes
 
 Required changes for existing MCP clients:
 
@@ -1167,19 +1478,19 @@ Required changes for existing MCP clients:
 
 **Estimated Engineering Effort**: 1-2 days per client project
 
-#### 10.3.2. Tool Server Changes
+#### 11.3.2. Tool Server Changes
 
 **Good News**: Tool servers require ZERO changes. They continue to receive standard MCP JSON-RPC payloads after the Gateway unwraps Security Envelopes.
 
 ---
 
-## 11. Interoperability
+## 12. Interoperability
 
-### 11.1. Test Vectors
+### 12.1. Test Vectors
 
 This section provides test vectors for verifying SEAL implementations.
 
-#### 11.1.1. Test Vector 1: Valid Security Envelope
+#### 12.1.1. Test Vector 1: Valid Security Envelope
 
 **Ed25519 Keypair** (hex):
 
@@ -1246,7 +1557,7 @@ eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LWFnZW50LTEyMyIsInNjcCI6InJ
 }
 ```
 
-#### 11.1.2. Test Vector 2: Tampered Payload (Should Fail)
+#### 12.1.2. Test Vector 2: Tampered Payload (Should Fail)
 
 Take Test Vector 1 and modify the payload's `path` to `/etc/passwd`:
 
@@ -1272,7 +1583,7 @@ Take Test Vector 1 and modify the payload's `path` to `/etc/passwd`:
 
 **Expected Result**: Gateway MUST reject with `INVALID_SIGNATURE` error (signature does not match modified payload)
 
-#### 11.1.3. Test Vector 3: Expired Token
+#### 12.1.3. Test Vector 3: Expired Token
 
 Use Test Vector 1 but set `exp` claim to a past timestamp:
 
@@ -1288,7 +1599,7 @@ Use Test Vector 1 but set `exp` claim to a past timestamp:
 
 **Expected Result**: Gateway MUST reject with `TOKEN_EXPIRED` error
 
-### 11.2. Compliance Requirements
+### 12.2. Compliance Requirements
 
 A SEAL implementation is compliant if it:
 
@@ -1297,13 +1608,13 @@ A SEAL implementation is compliant if it:
 3. ✅ Enforces deny-by-default policy evaluation ([Section 5.3](#53-policy-evaluation-semantics))
 4. ✅ Rejects messages with timestamps older than 30 seconds
 5. ✅ Rejects expired Security Tokens
-6. ✅ Passes all test vectors in [Section 11.1](#111-test-vectors)
+6. ✅ Passes all test vectors in [Section 12.1](#121-test-vectors)
 
 ---
 
-## 12. IANA Considerations
+## 13. IANA Considerations
 
-### 12.1. Protocol Identifier Registry
+### 13.1. Protocol Identifier Registry
 
 IANA is requested to create a registry for SEAL protocol versions:
 
@@ -1315,7 +1626,7 @@ IANA is requested to create a registry for SEAL protocol versions:
 
 **Registration Procedure**: RFC Required
 
-### 12.2. Error Code Registry
+### 13.2. Error Code Registry
 
 IANA is requested to create a registry for SEAL error codes:
 
@@ -1334,7 +1645,7 @@ IANA is requested to create a registry for SEAL error codes:
 
 Initial registrations defined in [Section 8.1](#81-error-codes).
 
-### 12.3. JWT Claim Names Registry
+### 13.3. JWT Claim Names Registry
 
 IANA is requested to register the following JWT claim names in the JSON Web Token Claims Registry ([RFC 7519](https://www.rfc-editor.org/rfc/rfc7519.txt)):
 
@@ -1342,8 +1653,11 @@ IANA is requested to register the following JWT claim names in the JSON Web Toke
 | ------------ | ------------- | ----------- |
 | `scp` | Security Scope name | RFC XXXX, Section 4.2.2 |
 | `wid` | Workload Identity | RFC XXXX, Section 4.2.2 |
+| `exec_id` | Execution correlation identifier | RFC XXXX, Section 4.2.2 |
+| `tenant_id` | Multi-tenant routing identifier | RFC XXXX, Section 4.2.2 |
+| `nid` | Node identifier (infrastructure extension) | RFC XXXX, Section 10.2.2 |
 
-### 12.4. Security Scope Registry
+### 13.4. Security Scope Registry
 
 IANA is requested to create a registry for standard Security Scope names:
 
@@ -1363,9 +1677,9 @@ IANA is requested to create a registry for standard Security Scope names:
 
 ---
 
-## 13. References
+## 14. References
 
-### 13.1. Normative References
+### 14.1. Normative References
 
 [RFC2119] Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, DOI 10.17487/RFC2119, March 1997,  
 <https://www.rfc-editor.org/info/rfc2119>
@@ -1382,7 +1696,7 @@ IANA is requested to create a registry for standard Security Scope names:
 [MCP-SPEC] Anthropic, "Model Context Protocol Specification", November 2024,  
 <https://modelcontextprotocol.io/specification>
 
-### 13.2. Informative References
+### 14.2. Informative References
 
 [OWASP-AI-2026] OWASP Foundation, "OWASP AI Security and Privacy Guide", 2026,  
 <https://owasp.org/www-project-ai-security/>
@@ -1825,11 +2139,150 @@ This appendix maps SEAL features to common compliance frameworks.
 
 ---
 
-## Appendix E: Future Work
+## Appendix E: gRPC Transport Binding
+
+This appendix defines a binary transport binding for SEAL over gRPC, providing an alternative to the HTTP/JSON transport described in the main specification.
+
+### E.1. Overview
+
+SEAL messages MAY be transported over gRPC in addition to HTTP. When using gRPC, the `SealEnvelope` is serialized as a `bytes` field within protobuf messages. All security properties — JWT verification, capability checks, signature validation, and audit emission — apply identically to the gRPC transport.
+
+### E.2. Service Definitions
+
+#### E.2.1. GatewayInvocationService
+
+The `GatewayInvocationService` is the caller-facing service for tool invocation:
+
+```protobuf
+service GatewayInvocationService {
+  // Invoke a registered workflow
+  rpc InvokeWorkflow(InvocationRequest) returns (InvocationResponse);
+
+  // Invoke a CLI tool
+  rpc InvokeCli(InvocationRequest) returns (InvocationResponse);
+
+  // Explore an API endpoint
+  rpc ExploreApi(InvocationRequest) returns (InvocationResponse);
+
+  // List available tools
+  rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
+}
+
+message InvocationRequest {
+  // SealEnvelope serialized as JSON bytes
+  bytes seal_envelope = 1;
+}
+
+message InvocationResponse {
+  // SEAL response (success or error) serialized as JSON bytes
+  bytes seal_response = 1;
+}
+
+message ListToolsRequest {
+  // Security token for authorization
+  string security_token = 1;
+
+  // Optional filter pattern (glob)
+  string tool_pattern = 2;
+}
+
+message ListToolsResponse {
+  // Array of tool definitions serialized as JSON bytes
+  bytes tools = 1;
+}
+```
+
+All `InvocationRequest` messages carry a `SealEnvelope` serialized as a `bytes` field. The Gateway MUST deserialize the envelope and apply the same verification pipeline as the HTTP transport:
+
+1. JWT signature verification
+2. Ed25519 envelope signature verification
+3. Timestamp freshness check
+4. Policy evaluation ([Section 5.3](#53-policy-evaluation-semantics))
+5. Audit event emission ([Section 9.6](#96-audit-trail))
+
+#### E.2.2. ToolWorkflowService
+
+The `ToolWorkflowService` is the operator-facing service for tool and workflow management:
+
+```protobuf
+service ToolWorkflowService {
+  // Create a new workflow definition
+  rpc CreateWorkflow(WorkflowDefinition) returns (WorkflowId);
+
+  // Retrieve a workflow definition
+  rpc GetWorkflow(WorkflowId) returns (WorkflowDefinition);
+
+  // List all workflow definitions
+  rpc ListWorkflows(ListWorkflowsRequest) returns (WorkflowList);
+
+  // Update an existing workflow definition
+  rpc UpdateWorkflow(WorkflowDefinition) returns (WorkflowId);
+
+  // Delete a workflow definition
+  rpc DeleteWorkflow(WorkflowId) returns (google.protobuf.Empty);
+}
+
+message WorkflowDefinition {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  bytes definition = 4;  // Workflow definition serialized as JSON bytes
+}
+
+message WorkflowId {
+  string id = 1;
+}
+
+message ListWorkflowsRequest {
+  // Optional filter pattern
+  string name_pattern = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message WorkflowList {
+  repeated WorkflowDefinition workflows = 1;
+  string next_page_token = 2;
+}
+```
+
+Operator authentication for the `ToolWorkflowService` MUST be provided via gRPC metadata:
+
+```markdown
+authorization: Bearer <operator_jwt>
+```
+
+The operator JWT requirements are identical to those defined in [Section 6.6](#66-control-plane-authentication).
+
+### E.3. Transport Defaults
+
+| Property | Value |
+| --- | --- |
+| Default port | `50055` |
+| Security | mTLS or TLS with bearer token metadata |
+| JWT verification | Identical to HTTP transport (RS256 for operator, EdDSA for caller) |
+| Envelope format | `SealEnvelope` serialized as JSON within protobuf `bytes` field |
+| Error reporting | gRPC status codes mapped from SEAL error codes ([Section 8.1](#81-error-codes)) |
+
+### E.4. gRPC Status Code Mapping
+
+SEAL error codes MUST be mapped to gRPC status codes as follows:
+
+| SEAL Error Code Range | gRPC Status Code | Description |
+| --- | --- | --- |
+| 1000-1999 (Envelope/Token) | `UNAUTHENTICATED` (16) | Authentication failure |
+| 2000-2999 (Policy) | `PERMISSION_DENIED` (7) | Authorization failure |
+| 3000-3999 (Attestation) | `UNAUTHENTICATED` (16) | Identity verification failure |
+
+The SEAL error code and message MUST be included in the gRPC status details for diagnostic purposes.
+
+---
+
+## Appendix F: Future Work
 
 The following topics are considered for future versions of SEAL:
 
-### E.1. Tool Server Attestation
+### F.1. Tool Server Attestation
 
 **Problem**: Clients currently trust that the Gateway forwards requests to genuine tool servers. A compromised Gateway could proxy to malicious servers.
 
@@ -1839,7 +2292,7 @@ The following topics are considered for future versions of SEAL:
 - Clients verify tool server signatures before accepting results
 - Gateway maintains allowlist of trusted tool server public keys (code signing, signed binaries)
 
-### E.2. Policy Language Standardization
+### F.2. Policy Language Standardization
 
 **Problem**: This RFC describes Security Scope semantics but doesn't mandate a specific policy language.
 
@@ -1849,7 +2302,7 @@ The following topics are considered for future versions of SEAL:
 - Create JSON Schema for portable Security Scope definitions
 - Enable cross-platform Security Scope sharing
 
-### E.3. Multi-Party Trust
+### F.3. Multi-Party Trust
 
 **Problem**: Current trust model assumes a single trusted Gateway. In federated scenarios, multiple parties may need to collaborate.
 
@@ -1858,7 +2311,7 @@ The following topics are considered for future versions of SEAL:
 - Delegate tokens: Client A authorizes Client B to act on its behalf (OAuth 2.0-style token delegation)
 - Multi-signature envelopes: Require approval from multiple Gateways for high-risk operations
 
-### E.4. Hardware-Backed Attestation
+### F.4. Hardware-Backed Attestation
 
 **Problem**: Software-based workload identity verification can be spoofed by privileged attackers.
 
@@ -1868,7 +2321,7 @@ The following topics are considered for future versions of SEAL:
 - Support Intel SGX, AMD SEV, AWS Nitro Enclaves for confidential computing
 - Bind Security Tokens to hardware measurements (PCR values)
 
-### E.5. Rate Limit Enforcement Standardization
+### F.5. Rate Limit Enforcement Standardization
 
 **Problem**: RFC specifies `rate_limit` in capabilities but doesn't define algorithm details.
 
