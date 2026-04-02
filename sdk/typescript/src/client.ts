@@ -6,9 +6,17 @@ type AttestationResponse = {
     status?: string;
     message?: string;
     security_token?: string;
+    expires_at?: string;
+    session_id?: string;
     error?: {
         message?: string;
     };
+};
+
+export type AttestationResult = {
+    security_token: string;
+    expires_at: string;
+    session_id?: string;
 };
 
 type InvokeResponse = {
@@ -41,6 +49,8 @@ export class SEALClient {
 
     private key: Ed25519Key | null = null;
     private securityToken: string | null = null;
+    private expiresAt: string | null = null;
+    private sessionId: string | null = null;
 
     constructor(gatewayUrl: string, workloadId: string, securityScope: string) {
         this.gatewayUrl = gatewayUrl.replace(/\/$/, ''); // Remove trailing slash
@@ -50,8 +60,11 @@ export class SEALClient {
 
     /**
      * Perform the attestation handshake spanning the gateway's REST endpoint.
+     *
+     * Returns an AttestationResult containing security_token, expires_at,
+     * and optional session_id.
      */
-    public async attest(): Promise<string> {
+    public async attest(): Promise<AttestationResult> {
         this.key = await Ed25519Key.generate();
 
         const requestBody = {
@@ -83,7 +96,14 @@ export class SEALClient {
         }
 
         this.securityToken = data.security_token ?? null;
-        return this.securityToken as string;
+        this.expiresAt = data.expires_at ?? null;
+        this.sessionId = data.session_id ?? null;
+
+        return {
+            security_token: this.securityToken as string,
+            expires_at: this.expiresAt as string,
+            session_id: this.sessionId ?? undefined,
+        };
     }
 
     /**

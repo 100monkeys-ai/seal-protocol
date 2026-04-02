@@ -11,17 +11,26 @@ class SEALError(Exception):
         super().__init__(message)
         self.status_code = status_code
 
+class AttestationResult:
+    """Structured result from a successful SEAL attestation handshake."""
+
+    def __init__(self, security_token: str, expires_at: str, session_id: Optional[str] = None):
+        self.security_token = security_token
+        self.expires_at = expires_at
+        self.session_id = session_id
+
+
 class SEALClient:
     """
     A Python client wrapper for generating ephemeral keys, interacting
     with a SEAL Gateway to undergo an attestation handshake, and securely
     wrapping Model Context Protocol (MCP) message calls leveraging SEAL.
     """
-    
+
     def __init__(self, gateway_url: str, workload_id: str, security_scope: str):
         """
         Initialize the SEAL client properties.
-        
+
         Args:
             gateway_url: The HTTP(s) endpoint of the target SEAL Gateway proxying tools.
             workload_id: Process-specific identifier matching Gateway attest algorithms.
@@ -32,13 +41,18 @@ class SEALClient:
         self.security_scope = security_scope
         self.key: Optional[Ed25519Key] = None
         self.security_token: Optional[str] = None
-        
-    def attest(self) -> str:
+        self.expires_at: Optional[str] = None
+        self.session_id: Optional[str] = None
+
+    def attest(self) -> AttestationResult:
         """
         Perform the attestation handshake spanning the gateway's REST endpoint.
+
+        Returns:
+            AttestationResult containing security_token, expires_at, and optional session_id.
         """
         self.key = Ed25519Key.generate()
-        
+
         response = requests.post(
             f"{self.gateway_url}/v1/seal/attest",
             json={
@@ -49,13 +63,20 @@ class SEALClient:
             timeout=10
         )
         response.raise_for_status()
-        
+
         data = response.json()
         if data.get("status") == "error":
             raise SEALError(f"Attestation failed: {data.get('message', 'Unknown error')}")
-            
+
         self.security_token = data["security_token"]
-        return self.security_token
+        self.expires_at = data["expires_at"]
+        self.session_id = data.get("session_id")
+
+        return AttestationResult(
+            security_token=self.security_token,
+            expires_at=self.expires_at,
+            session_id=self.session_id,
+        )
         
     def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
