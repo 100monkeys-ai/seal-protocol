@@ -20,7 +20,7 @@ TypeScript/Node.js client SDK for the [Signed Envelope Attestation Layer (SEAL)]
 **From npm (once published):**
 
 ```bash
-npm install @100monkeys/seal
+npm install seal-protocol
 ```
 
 **From source:**
@@ -39,7 +39,7 @@ npm run build
 ### Step 1 — Instantiate the client
 
 ```typescript
-import { SEALClient } from "@100monkeys/seal";
+import { SEALClient } from "seal-protocol";
 
 const client = new SEALClient(
   "https://your-gateway.example.com", // gateway URL
@@ -71,7 +71,7 @@ console.log(result);
 ### Full example
 
 ```typescript
-import { SEALClient } from "@100monkeys/seal";
+import { SEALClient } from "seal-protocol";
 
 const client = new SEALClient(
   "https://gateway.example.com",
@@ -126,7 +126,7 @@ Zeroes out the ephemeral private key bytes in memory. Call this when the client 
 ### `Ed25519Key`
 
 ```typescript
-import { Ed25519Key } from "@100monkeys/seal";
+import { Ed25519Key } from "seal-protocol";
 
 const key = await Ed25519Key.generate();
 ```
@@ -145,7 +145,7 @@ const key = await Ed25519Key.generate();
 ### `createSealEnvelope`
 
 ```typescript
-import { createSealEnvelope } from "@100monkeys/seal";
+import { createSealEnvelope } from "seal-protocol";
 
 const envelope = await createSealEnvelope(
   "eyJ...",                          // security_token JWT
@@ -169,7 +169,7 @@ interface SealEnvelope {
 ### `createCanonicalMessage`
 
 ```typescript
-import { createCanonicalMessage } from "@100monkeys/seal";
+import { createCanonicalMessage } from "seal-protocol";
 
 const messageBytes = createCanonicalMessage(
   "eyJ...",                         // security_token
@@ -185,7 +185,7 @@ Returns a `Uint8Array` of the UTF-8 encoded canonical JSON (sorted keys, no whit
 ### `verifySealEnvelope`
 
 ```typescript
-import { verifySealEnvelope } from "@100monkeys/seal/server";
+import { verifySealEnvelope } from "seal-protocol/server";
 
 const mcpPayload = await verifySealEnvelope(
   envelope,
@@ -201,7 +201,7 @@ Server-side primitive to verify an incoming `SealEnvelope`. Reconstructs the can
 ## Error Handling
 
 ```typescript
-import { SEALClient, SEALError } from "@100monkeys/seal";
+import { SEALClient, SEALError } from "seal-protocol";
 
 const client = new SEALClient("https://gateway.example.com", "exec-1", "research-safe");
 

@@ -54,7 +54,7 @@ pip install -e "sdk/python[dev]"
 ### TypeScript (Install)
 
 ```bash
-npm install @100monkeys/seal
+npm install seal-protocol
 # or from source:
 cd sdk/typescript && npm install && npm run build
 ```
@@ -78,7 +78,7 @@ print("Public key:", key.get_public_key_base64())
 ### TypeScript (Generate a Keypair)
 
 ```typescript
-import { Ed25519Key } from "@100monkeys/seal";
+import { Ed25519Key } from "seal-protocol";
 
 const key = await Ed25519Key.generate();
 console.log("Public key:", key.getPublicKeyBase64());
@@ -108,7 +108,7 @@ print("Attested. Token:", token[:30] + "...")
 ### TypeScript (Attest)
 
 ```typescript
-import { SEALClient } from "@100monkeys/seal";
+import { SEALClient } from "seal-protocol";
 
 const client = new SEALClient(
   "https://gateway.example.com",

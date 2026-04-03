@@ -198,14 +198,14 @@ mcp_payload = verify_seal_envelope(
 
 ---
 
-## TypeScript SDK (`@100monkeys/seal`)
+## TypeScript SDK (`seal-protocol`)
 
 ### `SEALClient` (TypeScript SDK)
 
 The main entry point for interacting with a SEAL Gateway.
 
 ```typescript
-import { SEALClient } from "@100monkeys/seal";
+import { SEALClient } from "seal-protocol";
 
 const client = new SEALClient(
   gatewayUrl: string,
@@ -280,7 +280,7 @@ Thrown by `SEALClient` methods on HTTP 4xx/5xx responses. The `message` property
 Manages an ephemeral Ed25519 keypair.
 
 ```typescript
-import { Ed25519Key } from "@100monkeys/seal";
+import { Ed25519Key } from "seal-protocol";
 
 const key = await Ed25519Key.generate();
 ```
@@ -324,7 +324,7 @@ Fills the private and public key `Uint8Array`s with zeros.
 ### `createSealEnvelope`
 
 ```typescript
-import { createSealEnvelope } from "@100monkeys/seal";
+import { createSealEnvelope } from "seal-protocol";
 
 const envelope = await createSealEnvelope(
   securityToken: string,
@@ -367,7 +367,7 @@ interface McpPayload {
 ### `createCanonicalMessage`
 
 ```typescript
-import { createCanonicalMessage } from "@100monkeys/seal";
+import { createCanonicalMessage } from "seal-protocol";
 
 const messageBytes = createCanonicalMessage(
   securityToken: string,
@@ -385,7 +385,7 @@ Produces the UTF-8 canonical JSON byte sequence (sorted keys, no whitespace, int
 Server-side primitive to verify an incoming `SealEnvelope`.
 
 ```typescript
-import { verifySealEnvelope } from "@100monkeys/seal/server";
+import { verifySealEnvelope } from "seal-protocol/server";
 
 const mcpPayload = await verifySealEnvelope(
   envelope: any,

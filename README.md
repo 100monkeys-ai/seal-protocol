@@ -89,7 +89,7 @@ print(result)
 ### TypeScript
 
 ```typescript
-import { SEALClient } from "@100monkeys/seal";
+import { SEALClient } from "seal-protocol";
 
 const client = new SEALClient(
   "https://your-gateway.example.com",
