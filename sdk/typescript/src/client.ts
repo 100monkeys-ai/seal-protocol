@@ -31,9 +31,12 @@ type InvokeResponse = {
 };
 
 export class SEALError extends Error {
-    constructor(message: string) {
+    code?: number;
+
+    constructor(message: string, code?: number) {
         super(message);
         this.name = 'SEALError';
+        this.code = code;
     }
 }
 

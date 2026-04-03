@@ -30,7 +30,7 @@ def verify_seal_envelope(envelope: Dict[str, Any], public_key_bytes: bytes, max_
     """
     # 1. Validate envelope structure
     if envelope.get("protocol") != "seal/v1":
-        raise SEALError("Missing or invalid 'protocol' field. Expected 'seal/v1'.", 1005)
+        raise SEALError("Missing or invalid 'protocol' field. Expected 'seal/v1'.", 1000)
         
     security_token = envelope.get("security_token")
     if not security_token:
@@ -57,7 +57,7 @@ def verify_seal_envelope(envelope: Dict[str, Any], public_key_bytes: bytes, max_
         
     current_time = int(time.time())
     if abs(current_time - timestamp_unix) > max_age_seconds:
-        raise SEALError(f"Envelope timestamp is outside the allowed ±{max_age_seconds}s window.", 1004)
+        raise SEALError(f"Envelope timestamp is outside the allowed ±{max_age_seconds}s window.", 1003)
         
     # 3. Canonicalize message
     try:

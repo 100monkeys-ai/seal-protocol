@@ -44,38 +44,38 @@ export async function verifySealEnvelope(
     maxAgeSeconds: number = 30
 ): Promise<McpPayload> {
     if (!isRecord(envelope)) {
-        throw new SEALError('Missing or invalid envelope object.');
+        throw new SEALError('Missing or invalid envelope object.', 1000);
     }
 
     // 1. Validate envelope structure
     if (envelope.protocol !== 'seal/v1') {
-        throw new SEALError("Missing or invalid 'protocol' field. Expected 'seal/v1'.");
+        throw new SEALError("Missing or invalid 'protocol' field. Expected 'seal/v1'.", 1000);
     }
 
     const securityToken = envelope.security_token;
     if (!securityToken || typeof securityToken !== 'string') {
-        throw new SEALError("Missing or invalid 'security_token' field.");
+        throw new SEALError("Missing or invalid 'security_token' field.", 1000);
     }
 
     const signatureB64 = envelope.signature;
     if (!signatureB64 || typeof signatureB64 !== 'string') {
-        throw new SEALError("Missing or invalid 'signature' field.");
+        throw new SEALError("Missing or invalid 'signature' field.", 1000);
     }
 
     const payload = envelope.payload;
     if (!isMcpPayload(payload)) {
-        throw new SEALError("Missing or invalid 'payload' field.");
+        throw new SEALError("Missing or invalid 'payload' field.", 1000);
     }
 
     const timestampIso = envelope.timestamp;
     if (!timestampIso || typeof timestampIso !== 'string') {
-        throw new SEALError("Missing or invalid 'timestamp' field.");
+        throw new SEALError("Missing or invalid 'timestamp' field.", 1000);
     }
 
     // 2. Check Timestamp limits
     const timestampMs = Date.parse(timestampIso);
     if (isNaN(timestampMs)) {
-        throw new SEALError("Invalid 'timestamp' format. Expected ISO 8601.");
+        throw new SEALError("Invalid 'timestamp' format. Expected ISO 8601.", 1000);
     }
 
     const timestampUnix = Math.floor(timestampMs / 1000);
@@ -83,7 +83,7 @@ export async function verifySealEnvelope(
     const currentTimeUnix = Math.floor(currentTimeMs / 1000);
 
     if (Math.abs(currentTimeUnix - timestampUnix) > maxAgeSeconds) {
-        throw new SEALError(`Envelope timestamp is outside the allowed ±${maxAgeSeconds}s window.`);
+        throw new SEALError(`Envelope timestamp is outside the allowed ±${maxAgeSeconds}s window.`, 1003);
     }
 
     // 3. Canonicalize message
@@ -92,7 +92,7 @@ export async function verifySealEnvelope(
         canonicalMsg = createCanonicalMessage(securityToken, payload, timestampUnix);
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
-        throw new SEALError(`Failed to construct canonical message: ${message}`);
+        throw new SEALError(`Failed to construct canonical message: ${message}`, 1000);
     }
 
     // 4. Verify Signature
@@ -100,18 +100,18 @@ export async function verifySealEnvelope(
     try {
         signatureBytes = Buffer.from(signatureB64, 'base64');
     } catch {
-        throw new SEALError("Invalid base64 encoding for 'signature'.");
+        throw new SEALError("Invalid base64 encoding for 'signature'.", 1000);
     }
 
     let isValid: boolean;
     try {
         isValid = await ed.verifyAsync(signatureBytes, canonicalMsg, publicKeyBytes);
     } catch {
-        throw new SEALError("Ed25519 signature verification failed.");
+        throw new SEALError("Ed25519 signature verification failed.", 1001);
     }
 
     if (!isValid) {
-        throw new SEALError("Ed25519 signature verification failed.");
+        throw new SEALError("Ed25519 signature verification failed.", 1001);
     }
 
     return payload;
