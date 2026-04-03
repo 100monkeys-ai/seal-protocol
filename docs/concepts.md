@@ -54,7 +54,7 @@ The **SecurityToken** (called `security_token` in the wire format) is a JWT issu
 **JWT header:**
 
 ```json
-{ "alg": "EdDSA", "typ": "JWT" }
+{ "alg": "RS256", "typ": "JWT" }
 ```
 
 **JWT claims:**
@@ -62,7 +62,7 @@ The **SecurityToken** (called `security_token` in the wire format) is a JWT issu
 ```json
 {
   "sub": "exec-abc123",       // workload_id
-  "ctx": "research-safe",     // SecurityContext name
+  "scp": "research-safe",     // SecurityContext name
   "iat": 1740000000,          // issued at (Unix)
   "exp": 1740003600           // expires at (Unix, 1hr later)
 }
