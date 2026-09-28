@@ -41,7 +41,7 @@
     "@swc/core": "^1.16.2",
     "@swc/jest": "^0.2.39",
     "jest": "^30.5.2",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "typescript-eslint": "8.70.1"
   }
 }
