@@ -20,7 +20,7 @@ keywords = ["seal", "mcp", "ai", "agents", "security"]
 dependencies = [
     "cryptography>=50.0.1",
     "requests>=2.33.1",
-    "pydantic>=2.13.3",
+    "pydantic>=2.13.5",
 ]
 dynamic = ["version"]
 
