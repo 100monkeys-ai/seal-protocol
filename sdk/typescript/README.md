@@ -1,7 +1,7 @@
 # SEAL TypeScript SDK
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
-[![Node.js](https://img.shields.io/badge/node-20%2B-blue)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/node-22%2B-blue)](https://nodejs.org/)
 [![Version](https://img.shields.io/badge/version-0.1.0-green)](package.json)
 
 TypeScript/Node.js client SDK for the [Signed Envelope Attestation Layer (SEAL)](../../README.md). Wraps MCP tool calls in cryptographically signed `SealEnvelope`s and handles the attestation handshake.
@@ -10,7 +10,7 @@ TypeScript/Node.js client SDK for the [Signed Envelope Attestation Layer (SEAL)]
 
 ## Prerequisites
 
-- Node.js 20 or higher
+- Node.js 22 or higher
 - npm 10 or higher
 
 ---

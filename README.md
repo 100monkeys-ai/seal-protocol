@@ -118,7 +118,7 @@ client.dispose();
 | --- | --- |
 | [`RFC/seal-v1-specification.md`](RFC/seal-v1-specification.md) | Full IETF-style protocol specification |
 | [`sdk/python/`](sdk/python/) | Python 3.11+ client SDK |
-| [`sdk/typescript/`](sdk/typescript/) | TypeScript / Node.js 20+ client SDK |
+| [`sdk/typescript/`](sdk/typescript/) | TypeScript / Node.js 22+ client SDK |
 | [`docs/getting-started.md`](docs/getting-started.md) | Zero-to-first-tool-call walkthrough |
 | [`docs/concepts.md`](docs/concepts.md) | Domain terminology and concept definitions |
 | [`docs/sdk-reference.md`](docs/sdk-reference.md) | Full Python + TypeScript API reference |
