@@ -60,7 +60,7 @@ jobs:
         with:
           node-version-file: sdk/typescript/.nvmrc
           registry-url: 'https://npm.pkg.github.com'
-          scope: '@seal-protocol'
+          scope: '@100monkeys-ai'
           cache: 'npm'
           cache-dependency-path: sdk/typescript/package-lock.json
 

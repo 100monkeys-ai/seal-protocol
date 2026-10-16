@@ -1,5 +1,5 @@
 {
-  "name": "seal-protocol",
+  "name": "@100monkeys-ai/seal-protocol",
   "version": "1.0.0-beta",
   "type": "module",
   "description": "TypeScript client wrapper for the Signed Envelope Attestation Layer (SEAL)",
