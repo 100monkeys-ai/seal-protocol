@@ -1,6 +1,6 @@
 {
   "name": "seal-protocol",
-  "version": "0.15.0-pre-alpha",
+  "version": "1.0.0-beta",
   "type": "module",
   "description": "TypeScript client wrapper for the Signed Envelope Attestation Layer (SEAL)",
   "main": "dist/index.js",
